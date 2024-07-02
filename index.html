@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Image Processor</title>
+    <style>
+        :root {
+  --bg-color: #000000;
+  --primary-color: #007AFF;
+  --secondary-color: #0A84FF;
+  --text-color: #FFFFFF;
+  --border-radius: 10px;
+  --box-shadow: 5px 5px 10px rgba(0, 0, 0, 0.3), -5px -5px 10px rgba(255, 255, 255, 0.05);
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  background-color: var(--bg-color);
+  color: var(--text-color);
+  margin: 0;
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 100vh;
+  text-align: center;
+}
+
+.container {
+  width: 100%;
+  max-width: 400px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+h1 {
+  font-size: 28px;
+  font-weight: 600;
+  margin-bottom: 30px;
+}
+
+#upload {
+  display: none;
+}
+
+label[for="upload"] {
+  background-color: var(--primary-color);
+  color: var(--text-color);
+  padding: 12px 20px;
+  border-radius: var(--border-radius);
+  cursor: pointer;
+  font-size: 16px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: var(--box-shadow);
+  display: inline-block;
+  margin-bottom: 20px;
+}
+
+label[for="upload"]:hover {
+  background-color: var(--secondary-color);
+}
+
+#progress {
+  width: 100%;
+  height: 10px;
+  background-color: rgba(255, 255, 255, 0.1);
+  border-radius: var(--border-radius);
+  margin-top: 20px;
+  overflow: hidden;
+  box-shadow: var(--box-shadow);
+}
+
+#progress-bar {
+  width: 0;
+  height: 100%;
+  background-color: var(--primary-color);
+  transition: width 0.3s ease;
+}
+
+#download {
+  display: none;
+  background-color: var(--primary-color);
+  color: var(--text-color);
+  text-decoration: none;
+  padding: 12px 20px;
+  border-radius: var(--border-radius);
+  margin-top: 20px;
+  font-size: 16px;
+  font-weight: 500;
+  transition: all 0.3s ease;
+  box-shadow: var(--box-shadow);
+}
+
+#download:hover {
+  background-color: var(--secondary-color);
+}
+
+#canvas {
+  display: none;
+  max-width: 100%;
+  height: auto;
+  margin-top: 20px;
+  border-radius: var(--border-radius);
+  box-shadow: var(--box-shadow);
+}
+
+@media (max-width: 480px) {
+  .container {
+    padding: 0 15px;
+  }
+
+  h1 {
+    font-size: 24px;
+  }
+
+  label[for="upload"], #download {
+    font-size: 14px;
+    padding: 10px 16px;
+  }
+}
+
+/* Neumorphic animations */
+@keyframes pulse {
+  0% {
+    box-shadow: var(--box-shadow);
+  }
+  50% {
+    box-shadow: 7px 7px 14px rgba(0, 0, 0, 0.4), -7px -7px 14px rgba(255, 255, 255, 0.07);
+  }
+  100% {
+    box-shadow: var(--box-shadow);
+  }
+}
+
+label[for="upload"], #download {
+  animation: pulse 2s infinite;
+}
+    </style>
+</head>
+<body>
+    
+    <h1>Уменьшение Пикселей В 168х168</h1>
+    <label for="upload">Вставьте Ваш Тотем</label>
+    <input type="file" id="upload" accept="image/png">
+    <div id="progress">
+        <div id="progress-bar"></div>
+    </div>
+    <canvas id="canvas"></canvas>
+    <a id="download" href="#" download="processed_image.png">Скачать Уменьшенные Изображение</a>
+    <script>
+        document.getElementById('upload').addEventListener('change', handleFile);
+
+        function updateProgress(percent) {
+            const progressBar = document.getElementById('progress-bar');
+            progressBar.style.width = percent + '%';
+        }
+
+        function handleFile(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const img = new Image();
+                img.onload = function() {
+                    processImage(img);
+                };
+                img.src = e.target.result;
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function processImage(img) {
+            updateProgress(10);
+
+            const canvas = document.getElementById('canvas');
+            const ctx = canvas.getContext('2d');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            ctx.drawImage(img, 0, 0);
+
+            updateProgress(20);
+
+            const imageData = ctx.getImageData(0, 0, img.width, img.height);
+            const data = imageData.data;
+
+            // Обрезка прозрачных и полупрозрачных пикселей
+            let top = 0, left = 0, right = img.width, bottom = img.height;
+            const alphaThreshold = 30; // Порог для уровня прозрачности
+            const similarityThreshold = 50; // Порог для цветового сходства
+
+            function isSimilarToTransparent(x, y) {
+                const index = (y * img.width + x) * 4;
+                const alpha = data[index + 3];
+                const red = data[index];
+                const green = data[index + 1];
+                const blue = data[index + 2];
+
+                if (alpha > alphaThreshold) return false;
+
+                for (let dx = -1; dx <= 1; dx++) {
+                    for (let dy = -1; dy <= 1; dy++) {
+                        if (dx === 0 && dy === 0) continue;
+
+                        const nx = x + dx;
+                        const ny = y + dy;
+                        if (nx < 0 || nx >= img.width || ny < 0 || ny >= img.height) continue;
+
+                        const nIndex = (ny * img.width + nx) * 4;
+                        const nAlpha = data[nIndex + 3];
+                        const nRed = data[nIndex];
+                        const nGreen = data[nIndex + 1];
+                        const nBlue = data[nIndex + 2];
+
+                        if (
+                            Math.abs(red - nRed) < similarityThreshold &&
+                            Math.abs(green - nGreen) < similarityThreshold &&
+                            Math.abs(blue - nBlue) < similarityThreshold &&
+                            nAlpha <= alphaThreshold
+                        ) {
+                            return true;
+                        }
+                    }
+                }
+
+                return false;
+            }
+
+            outer: for (let y = 0; y < img.height; y++) {
+                for (let x = 0; x < img.width; x++) {
+                    if (!isSimilarToTransparent(x, y)) {
+                        top = y;
+                        break outer;
+                    }
+                }
+            }
+
+            outer: for (let y = img.height - 1; y >= 0; y--) {
+                for (let x = 0; x < img.width; x++) {
+                    if (!isSimilarToTransparent(x, y)) {
+                        bottom = y + 1;
+                        break outer;
+                    }
+                }
+            }
+
+            outer: for (let x = 0; x < img.width; x++) {
+                for (let y = 0; y < img.height; y++) {
+                    if (!isSimilarToTransparent(x, y)) {
+                        left = x;
+                        break outer;
+                    }
+                }
+            }
+
+            outer: for (let x = img.width - 1; x >= 0; x--) {
+                for (let y = 0; y < img.height; y++) {
+                    if (!isSimilarToTransparent(x, y)) {
+                        right = x + 1;
+                        break outer;
+                    }
+                }
+            }
+
+            const trimmedWidth = right - left;
+            const trimmedHeight = bottom - top;
+
+            canvas.width = trimmedWidth;
+            canvas.height = trimmedHeight;
+            ctx.putImageData(imageData, -left, -top);
+
+            updateProgress(40);
+
+            // Изменение размера изображения до 168x168
+            const resizedCanvas = document.createElement('canvas');
+            const resizedCtx = resizedCanvas.getContext('2d');
+            resizedCanvas.width = 168;
+            resizedCanvas.height = 168;
+            resizedCtx.drawImage(canvas, 0, 0, 168, 168);
+
+            updateProgress(60);
+
+            const resizedImageData = resizedCtx.getImageData(0, 0, 168, 168);
+            const resizedData = resizedImageData.data;
+
+            // Удаление первых четырех блоков пикселей
+            for (let i = 0; i < 4 * 168 * 4; i++) {
+                resizedData[i] = 0;
+            }
+
+            updateProgress(80);
+
+            // Смягчение соседних блоков
+            for (let y = 4; y < 168; y++) {
+                for (let x = 0; x < 168; x++) {
+                    const index = (y * 168 + x) * 4;
+                    resizedData[index] = (resizedData[index] + resizedData[index - 168 * 4] + resizedData[index + 168 * 4]) / 3;
+                    resizedData[index + 1] = (resizedData[index + 1] + resizedData[index + 1 - 168 * 4] + resizedData[index + 1 + 168 * 4]) / 3;
+                    resizedData[index + 2] = (resizedData[index + 2] + resizedData[index + 2 - 168 * 4] + resizedData[index + 2 + 168 * 4]) / 3;
+                }
+            }
+
+            updateProgress(100);
+
+            resizedCtx.putImageData(resizedImageData, 0, 0);
+
+            const downloadLink = document.getElementById('download');
+            downloadLink.href = resizedCanvas.toDataURL('image/png');
+            downloadLink.style.display = 'block';
+        }
+    </script>
+</body>
+  </html>
